@@ -1,94 +1,142 @@
+from pathlib import Path
+
 import torch
 import torch.nn as nn
-from Config import Config
-from models.CNN import CNN
-from FSDDataset import FSDDataset
+from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, random_split
 
-SEED = 12
-torch.manual_seed(seed=SEED)
-BATCH_SIZE = 32
-device = "cuda" if torch.cuda.is_available() else "cpu"
+from Config import Config
+from FSDDataset import FSDDataset
+from models.CNN import CNN
 
-config = Config()
 
-def create_train_test_data():
-    label_csv = "../data/labels.csv"
-    img_path = "../data/images"
-    full_data = FSDDataset(label_csv, img_path)
-    train_size = config.train_test_ratio * len(full_data)
-    test_size = (1 - config.train_test_ratio) * len(full_data)
-    train_data, test_data = random_split(
-        full_data,
-        [train_size, test_size]
+class SyntheticDrivingDataset(Dataset):
+    def __init__(self, size: int, input_shape=(3, 66, 200)):
+        self.size = size
+        self.input_shape = input_shape
+
+    def __len__(self):
+        return self.size
+
+    def __getitem__(self, idx):
+        image = torch.rand(self.input_shape, dtype=torch.float32)
+        label = torch.zeros(2, dtype=torch.float32)
+        return image, label
+
+
+def build_transforms():
+    # Keep this small for now so the pipeline is easy to wire before you add
+    # augmentation or normalization specific to the real dataset.
+    try:
+        from torchvision import transforms
+    except ImportError as exc:
+        raise ImportError("torchvision is required for image transforms") from exc
+
+    return transforms.Compose(
+        [
+            transforms.Resize((66, 200)),
+            transforms.ToTensor(),
+        ]
     )
-    return train_data, test_data
 
-def create_train_dataloader(train_data):
-    train_dataloader = DataLoader(
-        dataset=train_data,
-        batch_size=BATCH_SIZE,
-        shuffle=True
+
+def create_datasets(config: Config):
+    if not config.csv_path.exists():
+        print(f"warning: {config.csv_path} not found, using synthetic data for now")
+        dataset = SyntheticDrivingDataset(size=128, input_shape=(3, config.out_h, config.out_w))
+        train_size = int(len(dataset) * config.train_test_ratio)
+        val_size = len(dataset) - train_size
+        generator = torch.Generator().manual_seed(config.seed)
+        return random_split(dataset, [train_size, val_size], generator=generator)
+
+    dataset = FSDDataset(
+        csv_file_path=config.csv_path,
+        img_dir=config.path / "images",
+        transform=build_transforms(),
     )
-    return train_dataloader
 
-def create_test_dataloader(test_data):
-    test_dataloader = DataLoader(
-        dataset=test_data,
-        batch_size=BATCH_SIZE,
-        shuffle=True
+    train_size = int(len(dataset) * config.train_test_ratio)
+    val_size = len(dataset) - train_size
+    generator = torch.Generator().manual_seed(config.seed)
+    return random_split(dataset, [train_size, val_size], generator=generator)
+
+
+def create_dataloader(dataset, batch_size: int, shuffle: bool, num_workers: int):
+    return DataLoader(
+        dataset=dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=torch.cuda.is_available(),
     )
-    return test_dataloader
 
-def train(model, loss_fn, optimizer, train_dataloader):
-    model.train()
-    total_loss = 0
-    for batch_idx, (X,y) in enumerate(train_dataloader):
-        X, y = X.to(device), y.to(device)
-        optimizer.zero_grad()        
-        pred = model(X)
-        
-        loss = loss_fn(pred, y)        
-        total_loss += loss
-        
-        loss.backward()
-        optimizer.step()
 
-def test(model, loss_fn, test_dataloader):
-    model.eval()
-    min_loss = float('inf')
-    total_loss = 0
-    accuracy = 0
-    with torch.inference_mode():
-        for batch_idx, (X,y) in enumerate(test_dataloader):
-            X, y = X.to(device), y.to(device)
+def run_epoch(model, dataloader, loss_fn, optimizer=None, device="cpu"):
+    is_train = optimizer is not None
+    model.train(is_train)
+
+    total_loss = 0.0
+    num_batches = 0
+
+    context = torch.enable_grad() if is_train else torch.inference_mode()
+    with context:
+        for X, y in dataloader:
+            X = X.to(device)
+            y = y.to(device)
+
+            if is_train:
+                optimizer.zero_grad(set_to_none=True)
+
             pred = model(X)
             loss = loss_fn(pred, y)
-            total_loss += loss
-        
-        unit_loss = total_loss / len(test_dataloader)
-        if unit_loss < min_loss:
-            min_loss = unit_loss
-            torch.save({
-                "model_state": model.state_dict(),
-            }, config.model_path)
-            print("model saved at" + config.model_path)
 
-def train_test_loop(epochs):
-    cnn = CNN()
-    train_data, test_data = create_train_test_data()
-    train_dataloader = create_train_dataloader(train_data)
-    test_dataloader = create_test_dataloader(test_data)
-    loss_fn_mse = nn.MSELoss()
-    optimizer_adam = torch.optim.Adam(
-        params=cnn.parameters(),
-        lr=config.learning_rate
-    )
-    
-    for epoch in range(epochs):
-        train(cnn, loss_fn_mse, optimizer_adam, train_dataloader)
-        test(cnn, loss_fn_mse, test_dataloader)
-    
-    
-        
-         
+            if is_train:
+                loss.backward()
+                optimizer.step()
+
+            total_loss += loss.item()
+            num_batches += 1
+
+    return total_loss / max(num_batches, 1)
+
+
+def train_test_loop(config: Config):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    train_data, val_data = create_datasets(config)
+    train_loader = create_dataloader(train_data, config.batch_size, True, config.num_workers)
+    val_loader = create_dataloader(val_data, config.batch_size, False, config.num_workers)
+
+    model = CNN(input_shape=(3, config.out_h, config.out_w)).to(device)
+    loss_fn = nn.SmoothL1Loss()
+    optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate)
+
+    best_val_loss = float("inf")
+    model_path = Path(config.model_path)
+    model_path.parent.mkdir(parents=True, exist_ok=True)
+
+    for epoch in range(config.epochs):
+        train_loss = run_epoch(model, train_loader, loss_fn, optimizer=optimizer, device=device)
+        val_loss = run_epoch(model, val_loader, loss_fn, optimizer=None, device=device)
+
+        print(f"epoch={epoch + 1} train_loss={train_loss:.4f} val_loss={val_loss:.4f}")
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(
+                {
+                    "model_state": model.state_dict(),
+                    "config": config.__dict__,
+                    "val_loss": best_val_loss,
+                },
+                model_path,
+            )
+            print(f"saved model to {model_path}")
+
+
+def main():
+    config = Config()
+    train_test_loop(config)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,4 +1,5 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from pathlib import Path
 
 # -----------------------------
 # ML Config
@@ -6,9 +7,9 @@ from dataclasses import dataclass
 @dataclass
 class Config:
     ### Paths
-    # Adjust the dateset to be used here
-    path: str = "data"
-    csv_path: str = path + "/labels.csv"
+    # Adjust the dataset root here.
+    path: Path = Path("data")
+    csv_path: Path = field(init=False)
 
     ### Training hyperparameters
     # Allows for reproducible random nubmers
@@ -26,7 +27,7 @@ class Config:
     num_workers: int = 2
 
     # saving
-    model_path: str = "../rpi/src/self_driving_pkg/self_driving_pkg/models/model.pt"
+    model_path: Path = Path("../rpi/src/self_driving_pkg/self_driving_pkg/models/model.pt")
     
     ### Image preprocessing
     out_h: int = 66
@@ -34,4 +35,7 @@ class Config:
 
     ### Motor thresholds
     max_throttle: int = 40
-    max_angle: int = 90 
+    max_angle: int = 90
+
+    def __post_init__(self):
+        self.csv_path = self.path / "labels.csv"
