@@ -1,0 +1,20 @@
+ros:
+  camera:
+    topic: camera/frame
+    index: 0
+    publish_hz: 15.0
+    width: 640
+    height: 480
+  inference:
+    frame_topic: camera/frame
+    command_topic: driving/command
+    model_path: torch/models/model.pt
+    publish_hz: 10.0
+  logger:
+    command_topic: driving/command
+    log_path: data/labels.csv
+  motor:
+    command_topic: driving/command
+    max_pwm: 2000
+    steering_scale: 1.0
+    throttle_scale: 1.0
