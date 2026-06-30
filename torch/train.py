@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader, random_split
-
+from torchvision import transforms
 from Config import Config
 from FSDDataset import FSDDataset
 from models.CNN import CNN
@@ -27,11 +27,6 @@ class SyntheticDrivingDataset(Dataset):
 def build_transforms():
     # Keep this small for now so the pipeline is easy to wire before you add
     # augmentation or normalization specific to the real dataset.
-    try:
-        from torchvision import transforms
-    except ImportError as exc:
-        raise ImportError("torchvision is required for image transforms") from exc
-
     return transforms.Compose(
         [
             transforms.Resize((66, 200)),
