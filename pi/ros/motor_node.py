@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 import sys
 
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
 
 from ros_config import load_ros_config
 
@@ -31,9 +32,9 @@ class MotorNode(Node):
         self.throttle_scale = config.get("throttle_scale")
 
         self.subscription = self.create_subscription(
-            Float32MultiArray, 
-            self.command_topic, 
-            self.on_command, 
+            String,
+            self.command_topic,
+            self.on_command,
             10
         )
         self.motor = Ordinary_Car() if Ordinary_Car is not None else None
@@ -54,9 +55,15 @@ class MotorNode(Node):
         right_pwm = int(right * self.max_pwm)
         return left_pwm, left_pwm, right_pwm, right_pwm
 
-    def on_command(self, msg: Float32MultiArray) -> None:
-        steering = float(msg.data[0]) if len(msg.data) > 0 else 0.0
-        throttle = float(msg.data[1]) if len(msg.data) > 1 else 0.0
+    def on_command(self, msg: String) -> None:
+        try:
+            payload = json.loads(msg.data)
+        except json.JSONDecodeError:
+            self.get_logger().warning("received invalid command payload")
+            return
+
+        steering = float(payload.get("steering", 0.0))
+        throttle = float(payload.get("throttle", 0.0))
         wheel_pwm = self._mix(steering, throttle)
 
         if self.motor is not None:

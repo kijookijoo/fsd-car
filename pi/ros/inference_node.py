@@ -3,6 +3,7 @@ from __future__ import annotations
 from importlib import util
 from pathlib import Path
 import sys
+import json
 
 import cv2
 import rclpy
@@ -10,7 +11,7 @@ import torch
 from cv_bridge import CvBridge
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import String
 from torchvision import transforms
 
 from ros_config import load_ros_config, resolve_path
@@ -32,10 +33,10 @@ class InferenceNode(Node):
         self.model_path = resolve_path(config.get("model_path"))
         self.publish_hz = config.get("publish_hz")
         self.publisher = self.create_publisher(
-            Float32MultiArray, 
-            config.get("command_topic"), 
+            String,
+            config.get("command_topic"),
             10
-            )   
+            )
         self.subscription = self.create_subscription(
             Image, 
             config.get("frame_topic"), 
@@ -54,6 +55,7 @@ class InferenceNode(Node):
             ]
         )
         self.latest_frame = None
+        self.latest_frame_stamp_ns = None
         self.timer = self.create_timer(1.0 / self.publish_hz, self.publish_command)
 
     def _load_model(self):
@@ -72,9 +74,12 @@ class InferenceNode(Node):
 
     def on_frame(self, msg: Image) -> None:    
         self.latest_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self.latest_frame_stamp_ns = (
+            int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
+        )
 
     def publish_command(self) -> None:
-        if self.latest_frame is None:
+        if self.latest_frame is None or self.latest_frame_stamp_ns is None:
             return
 
         frame_rgb = cv2.cvtColor(self.latest_frame, cv2.COLOR_BGR2RGB)
@@ -83,8 +88,14 @@ class InferenceNode(Node):
         with torch.inference_mode():
             prediction = self.model(image).squeeze(0).detach().cpu()
 
-        command = Float32MultiArray()
-        command.data = [prediction[0], prediction[1]]
+        command = String()
+        command.data = json.dumps(
+            {
+                "frame_stamp_ns": self.latest_frame_stamp_ns,
+                "steering": float(prediction[0]),
+                "throttle": float(prediction[1]),
+            }
+        )
         self.publisher.publish(command)
 
 
