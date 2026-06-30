@@ -1,279 +1,144 @@
-# 🚗 End-to-End Self-Driving RC Car (From-Scratch CNN)
+# End-to-End Self-Driving RC Car
 
-A real-time autonomous RC car built using a **custom convolutional neural network trained from scratch**, using self-collected driving data.
+This project is a ROS2-based self-driving RC car built around behavioral cloning.
+The system learns from human driving data, then reuses the same pipeline for autonomous inference.
 
-The system learns to map raw camera images directly to control signals (steering + throttle) using behavioral cloning.
+## Core Idea
 
+The car does not rely on hand-written lane rules or a large perception stack.
+It learns a direct mapping from camera frames to control commands.
 
----
-
-# 🧠 Core Idea
-
-Instead of hand-engineered rules or pretrained models, the system learns driving behavior directly from data:
-
-```
-Image → CNN (from scratch) → Steering + Throttle
+```text
+camera frame -> model -> steering + throttle
 ```
 
-The model learns by imitating human driving.
+## System Overview
 
----
+The architecture is split into three parts:
 
-# 🏗️ System Architecture
-
-## 1. Data Collection (Teleoperation Mode)
-
-You manually drive the RC car while the system records data.
-
-```
-Raspberry Pi (SSH session)
-        ↓
-Camera captures frames
-        ↓
-Human drives car (keyboard / controller)
-        ↓
-System logs:
-    image + steering + throttle
-        ↓
-Dataset stored locally
+```text
+manual/teleop mode      training pipeline         inference mode
+-------------------     -----------------         --------------
+human drives car  ->    dataset creation   ->     camera -> model -> motor
 ```
 
-### Dataset structure
+The ROS2 nodes keep this flow modular:
 
-```
-dataset/
- ├── images/
- │    000001.jpg
- │    000002.jpg
- └── labels.csv
-```
+```text
+camera_node
+  -> publishes frames
 
-### CSV format
+teleop_node
+  -> publishes driving commands during data collection
 
-```
-image,steering,throttle
-000001.jpg,-0.25,0.60
-000002.jpg, 0.10,0.55
-```
+logger_node
+  -> pairs frames with commands
+  -> writes images + labels to disk
 
----
+inference_node
+  -> consumes frames
+  -> publishes predicted commands
 
-## 2. Training Pipeline (Laptop)
-
-A custom CNN is trained from scratch (no pretrained weights).
-
-```
-Image → Custom CNN → [steering, throttle]
+motor_node
+  -> converts commands into wheel outputs
 ```
 
-Example output:
+## Data Collection Mode
 
-```
-tensor([-0.32, 0.58])
-```
+In manual mode, a human drives the car while ROS records synchronized camera frames and commands.
+This creates a dataset that can later be used for training.
 
----
-
-## 3. Deployment Pipeline (Raspberry Pi)
-
-```
-Live Camera Feed
-        ↓
-Image Preprocessing (resize, normalize)
-        ↓
-Custom CNN Inference
-        ↓
-Control Output (steering + throttle)
-        ↓
-Motor Driver (TB6612FNG)
-        ↓
-DC Motors → RC Car movement
+```text
+camera_node -> logger_node -> images
+teleop_node  -> logger_node -> labels.csv
 ```
 
----
+Why this design:
 
-# 🧩 Hardware Components
+- The camera node stays focused on image capture.
+- The teleop node only handles human input.
+- The logger owns dataset writing, so the recording logic stays consistent.
 
-## 🧠 Compute
-- Raspberry Pi 5 (4GB RAM recommended)
-- microSD Card (32GB–128GB)
-- USB-C Power Supply (5V / 5A recommended)
+## Inference Mode
 
-## 📷 Vision
-- Logitech USB Webcam (720p or 1080p)
-- Optional camera mount
+In inference mode, the human is removed from the loop.
+The model predicts commands from live camera frames and the motor node applies them to the chassis.
 
-## 🚗 Chassis & Motion
-- 2WD RC Robot Car Chassis Kit
-- 2 DC motors + wheels
-- Caster wheel
-
-## ⚡ Motor Control
-- TB6612FNG motor driver
-- Jumper wires + breadboard
-
-## 🔋 Power System
-- Battery pack for motors (separate from Pi)
-- Raspberry Pi powered independently
-
-## 🎮 Data Collection Input
-Used ONLY during training:
-- USB Game Controller (recommended)
-- or Keyboard (WASD)
-
-## ❄️ Cooling
-- Raspberry Pi 5 active cooler (recommended)
-- Passive heatsink (minimum acceptable)
-
----
-
-# 🧠 Model Architecture (From Scratch CNN)
-
-## Input
-```
-RGB Image (224 × 224 × 3)
+```text
+camera_node -> inference_node -> motor_node -> car
 ```
 
-## Output
-```
-[steering, throttle]
-```
+Why this design:
 
-Example:
-```
-tensor([-0.30, 0.55])
-```
+- The same ROS structure is reused for both collection and autonomy.
+- The inference node can be swapped or retrained without changing the rest of the stack.
+- Motor control remains isolated from the learning code.
 
----
+## Launch Modes
 
-## Architecture
+The project uses two launch entrypoints:
 
-```
-Conv2D (3 → 16) + ReLU
-Conv2D (16 → 32) + ReLU
-Conv2D (32 → 64) + ReLU
-Flatten
-Linear → 128
-Linear → 2 outputs
+```bash
+python3 pi/ros/session_launcher.py manual
+python3 pi/ros/session_launcher.py inference
 ```
 
----
+- `manual` starts data collection
+- `inference` starts autonomous driving
 
-## Loss Function
-```
-Smooth L1 Loss (Huber Loss)
-```
+## Dataset Output
 
-## Optimizer
-```
-Adam (lr=1e-4)
-```
+The logger stores a simple image-and-label dataset:
 
----
-
-# 📊 Dataset Format
-
-```
-image, steering, throttle
-000001.jpg, -0.20, 0.60
-000002.jpg,  0.10, 0.55
-000003.jpg,  0.00, 0.40
+```text
+data/
+  images/
+    <timestamp>.jpg
+  labels.csv
 ```
 
----
+Example row:
 
-# 🔄 Full Workflow
-
-## Step 1 — Data Collection
-
-```
-Human drives car
-        ↓
-Camera captures frames
-        ↓
-Controls recorded (steering + throttle)
-        ↓
-Dataset created
+```text
+image,frame_stamp_ns,steering,throttle
+1719751234567890123.jpg,1719751234567890123,-0.25,0.60
 ```
 
----
+## Model Summary
 
-## Step 2 — Training
+The model is a small CNN trained from scratch to predict continuous control values.
 
-```
-Dataset → CNN (from scratch) → Driving policy learned
-```
-
----
-
-## Step 3 — Deployment
-
-```
-Camera → CNN → Motor commands → Car drives autonomously
+```text
+RGB image -> CNN -> [steering, throttle]
 ```
 
----
+The important point is not the exact layer stack, but the behavior:
 
-# ⚠️ Key Design Principles
+- it learns directly from driving data
+- it outputs continuous control, not discrete labels
+- it stays lightweight enough for Raspberry Pi deployment
 
-## ✔ No pretrained models
-All features learned from scratch.
+## Hardware Summary
 
-## ✔ End-to-end learning
-No intermediate modules:
+- Raspberry Pi for onboard execution
+- USB camera for front-facing vision
+- 2WD chassis kit
+- motor driver for wheel control
+- separate power supply for motors
 
-- No lane detection  
-- No object detection  
-- No rule-based control  
+## Why This Architecture
 
-## ✔ Direct control prediction
+- It keeps data collection and autonomy in the same ROS2 framework.
+- It separates concerns cleanly: sensing, logging, inference, and actuation.
+- It makes future refactors easier because the launch files only decide which nodes are active.
 
-Instead of:
+## Full Workflow
+
+```text
+1. Human drives the car
+2. ROS records frames and labels
+3. Dataset is used to train a model
+4. Model runs on the Pi
+5. Car drives from camera input alone
 ```
-LEFT / RIGHT / STOP
-```
 
-we use:
-```
-continuous steering + throttle
-```
-
----
-
-# 📌 Known Limitations
-
-- Requires consistent dataset quality
-- Sensitive to lighting changes
-- Performance depends on driving behavior during data collection
-- Can fail outside training environment
-
----
-
-# 🚀 Future Improvements
-
-- Temporal model (CNN + LSTM)
-- Obstacle detection (YOLO-based)
-- PID smoothing controller
-- Multi-camera setup
-- Reinforcement learning fine-tuning
-
----
-
-# 🧠 Learning Goals
-
-This project demonstrates:
-
-- PyTorch from-scratch CNN design
-- Behavioral cloning
-- Dataset engineering
-- Real-time inference on edge devices
-- Embedded ML deployment
-- Robotics integration
-
----
-
-# 🚗 Final System Summary
-
-```
-YOU DRIVE → DATASET → CNN LEARNS → CAR IMITATES YOU
-```
