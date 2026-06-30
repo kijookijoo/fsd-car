@@ -11,6 +11,7 @@ ros:
     model_path: torch/models/model.pt
     publish_hz: 10.0
   logger:
+    frame_topic: camera/frame
     command_topic: driving/command
     log_path: data/labels.csv
   motor:
