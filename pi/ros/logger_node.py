@@ -19,11 +19,11 @@ from ros_config import load_ros_config, resolve_path
 class LoggerNode(Node):
     def __init__(self):
         super().__init__("logger_node")
-        config = load_ros_config().get("logger")
+        config = load_ros_config()["logger"]
 
-        self.frame_topic = config.get("frame_topic")
-        self.command_topic = config.get("command_topic")
-        self.log_path = resolve_path(config.get("log_path"))
+        self.frame_topic = config["frame_topic"]
+        self.command_topic = config["command_topic"]
+        self.log_path = resolve_path(config["log_path"])
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
         self.images_dir = self.log_path.parent / "images"
         self.images_dir.mkdir(parents=True, exist_ok=True)
@@ -47,7 +47,7 @@ class LoggerNode(Node):
             self.file.flush()
 
     def on_frame(self, msg: Image) -> None:
-        frame_stamp_ns = int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
+        frame_stamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         self.frames[frame_stamp_ns] = frame
         self.frame_order.append(frame_stamp_ns)
@@ -84,8 +84,8 @@ class LoggerNode(Node):
         except ValueError:
             pass
 
-        steering = float(payload.get("steering", 0.0))
-        throttle = float(payload.get("throttle", 0.0))
+        steering = payload["steering"]
+        throttle = payload["throttle"]
 
         image_name = f"{frame_stamp_ns}.jpg"
         image_path = self.images_dir / image_name
@@ -104,7 +104,7 @@ class LoggerNode(Node):
             self.get_logger().warning("received invalid command payload")
             return
 
-        frame_stamp_ns = int(payload.get("frame_stamp_ns", -1))
+        frame_stamp_ns = payload["frame_stamp_ns"]
         if frame_stamp_ns in self.frames:
             self._write_sample(frame_stamp_ns, payload)
         else:

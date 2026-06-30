@@ -29,17 +29,17 @@ def load_cnn_class():
 class InferenceNode(Node):
     def __init__(self):
         super().__init__("inference_node")
-        config = load_ros_config().get("inference")
-        self.model_path = resolve_path(config.get("model_path"))
-        self.publish_hz = config.get("publish_hz")
+        config = load_ros_config()["inference"]
+        self.model_path = resolve_path(config["model_path"])
+        self.publish_hz = config["publish_hz"]
         self.publisher = self.create_publisher(
             String,
-            config.get("command_topic"),
+            config["command_topic"],
             10
             )
         self.subscription = self.create_subscription(
             Image, 
-            config.get("frame_topic"), 
+            config["frame_topic"], 
             self.on_frame, 
             10
             )   
@@ -75,7 +75,7 @@ class InferenceNode(Node):
     def on_frame(self, msg: Image) -> None:    
         self.latest_frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
         self.latest_frame_stamp_ns = (
-            int(msg.header.stamp.sec) * 1_000_000_000 + int(msg.header.stamp.nanosec)
+            msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
         )
 
     def publish_command(self) -> None:

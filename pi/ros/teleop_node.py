@@ -23,15 +23,15 @@ class TeleopState:
 class TeleopNode(Node):
     def __init__(self):
         super().__init__("teleop_node")
-        config = load_ros_config().get("teleop")
+        config = load_ros_config()["teleop"]
 
-        self.command_topic = config.get("command_topic")
-        self.publish_hz = config.get("publish_hz")
-        self.linear_step = config.get("linear_step")
-        self.angular_step = config.get("angular_step")
-        self.max_linear = config.get("max_linear")
-        self.max_angular = config.get("max_angular")
-        self.zero_on_idle = config.get("zero_on_idle")
+        self.command_topic = config["command_topic"]
+        self.publish_hz = config["publish_hz"]
+        self.linear_step = config["linear_step"]
+        self.angular_step = config["angular_step"]
+        self.max_linear = config["max_linear"]
+        self.max_angular = config["max_angular"]
+        self.zero_on_idle = config["zero_on_idle"]
 
         self.publisher = self.create_publisher(
             String, 

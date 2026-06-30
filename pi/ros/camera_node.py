@@ -12,17 +12,17 @@ from ros_config import load_ros_config
 class CameraNode(Node):
     def __init__(self):
         super().__init__("camera_node")
-        config = load_ros_config().get("camera", {})
+        config = load_ros_config()["camera"]
 
         self.publisher = self.create_publisher(
             Image, 
-            str(config.get("topic")), 
+            config["topic"], 
             10
             )
         self.bridge = CvBridge()
-        self.capture = cv2.VideoCapture(config.get("index"))
-        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.get("width"))
-        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.get("height"))
+        self.capture = cv2.VideoCapture(config["index"])
+        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, config["width"])
+        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config["height"])
 
         if not self.capture.isOpened():
             self.get_logger().warning(
@@ -30,7 +30,7 @@ class CameraNode(Node):
             )
 
         self.timer = self.create_timer(
-            config.get("publish_hz"), 
+            config["publish_hz"], 
             self.publish_frame
             )
 
