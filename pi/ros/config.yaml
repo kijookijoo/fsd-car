@@ -10,6 +10,19 @@ ros:
     command_topic: driving/command
     model_path: torch/models/model.pt
     publish_hz: 10.0
+  manual:
+    frame_topic: camera/frame
+    command_topic: driving/command
+    step: 0.05
+    publish_hz: 20.0
+  teleop:
+    command_topic: driving/command
+    publish_hz: 20.0
+    linear_step: 0.1
+    angular_step: 0.3
+    max_linear: 1.0
+    max_angular: 1.5
+    zero_on_idle: true
   logger:
     frame_topic: camera/frame
     command_topic: driving/command
