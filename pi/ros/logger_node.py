@@ -32,6 +32,8 @@ class LoggerNode(Node):
         self.frame_order = deque()
         self.pending_commands = {}
         self.pending_order = deque()
+        self.latest_frame_stamp_ns = None
+        self.latest_frame = None
         self.max_buffered_frames = 200
 
         self.frame_subscription = self.create_subscription(
@@ -49,6 +51,8 @@ class LoggerNode(Node):
     def on_frame(self, msg: Image) -> None:
         frame_stamp_ns = msg.header.stamp.sec * 1_000_000_000 + msg.header.stamp.nanosec
         frame = self.bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        self.latest_frame_stamp_ns = frame_stamp_ns
+        self.latest_frame = frame
         self.frames[frame_stamp_ns] = frame
         self.frame_order.append(frame_stamp_ns)
         self._trim_frame_buffer()
@@ -74,6 +78,11 @@ class LoggerNode(Node):
 
     def _write_sample(self, frame_stamp_ns: int, payload: dict) -> None:
         frame = self.frames.pop(frame_stamp_ns, None)
+        if frame is None:
+            if self.latest_frame_stamp_ns == frame_stamp_ns and self.latest_frame is not None:
+                frame = self.latest_frame
+            else:
+                frame = None
         if frame is None:
             self.get_logger().warning(
                 f"missing frame for stamp_ns={frame_stamp_ns}, skipping sample"
@@ -104,13 +113,21 @@ class LoggerNode(Node):
             self.get_logger().warning("received invalid command payload")
             return
 
-        frame_stamp_ns = payload["frame_stamp_ns"]
-        if frame_stamp_ns in self.frames:
-            self._write_sample(frame_stamp_ns, payload)
-        else:
-            self.pending_commands[frame_stamp_ns] = payload
-            self.pending_order.append(frame_stamp_ns)
-            self._trim_frame_buffer()
+        frame_stamp_ns = payload.get("frame_stamp_ns")
+        if isinstance(frame_stamp_ns, int) and frame_stamp_ns >= 0:
+            if frame_stamp_ns in self.frames:
+                self._write_sample(frame_stamp_ns, payload)
+            else:
+                self.pending_commands[frame_stamp_ns] = payload
+                self.pending_order.append(frame_stamp_ns)
+                self._trim_frame_buffer()
+            return
+
+        if self.latest_frame_stamp_ns is None:
+            self.get_logger().warning("received command before any frame")
+            return
+
+        self._write_sample(self.latest_frame_stamp_ns, payload)
 
     def destroy_node(self):
         if getattr(self, "file", None):
