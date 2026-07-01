@@ -63,7 +63,6 @@ class TeleopNode(Node):
 
     def _publish(self) -> None:
         payload = {
-            "frame_stamp_ns": -1,
             "steering": float(self.state.angular),
             "throttle": float(self.state.linear),
         }
