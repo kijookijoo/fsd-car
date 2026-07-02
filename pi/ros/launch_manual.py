@@ -35,5 +35,10 @@ def generate_launch_description():
                 cwd=str(ROS_DIR),
                 output="screen",
             ),
+            ExecuteProcess(
+                cmd=[sys.executable, str(ROS_DIR / "web_server_node.py")],
+                cwd=str(ROS_DIR),
+                output="screen",
+            ),
         ]
     )

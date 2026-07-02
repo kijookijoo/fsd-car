@@ -57,16 +57,17 @@ class MotorNode(Node):
             self.get_logger().warning("received invalid command payload")
             return
 
-        steering = payload["steering"]
-        throttle = payload["throttle"]
+        steering = payload.get("steering", 0.0)
+        throttle = -payload.get("throttle", 0.0)
         left_front, left_rear, right_front, right_rear = self.compute_wheel_pwm(steering, throttle)
-        
+
+        self.get_logger().info(
+            f"steering={steering:.2f}, throttle={throttle:.2f}, "
+            f"LF={left_front}, LR={left_rear}, RF={right_front}, RR={right_rear}"
+        )
+
         if self.motor is not None:
             self.motor.set_motor_model(left_front, left_rear, right_front, right_rear)
-        else:
-            self.get_logger().info(
-                f"steering={steering:.3f} throttle={throttle:.3f} wheels={[left_front, left_rear, right_front, right_rear]}"
-            )
 
     def destroy_node(self):
         if self.motor is not None:
@@ -84,7 +85,11 @@ def main(args=None):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
