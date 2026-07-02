@@ -17,12 +17,12 @@ ros:
     publish_hz: 20.0
   teleop:
     command_topic: driving/command
-    publish_hz: 20.0
-    linear_step: 0.1
-    angular_step: 0.3
+    publish_hz: 50.0
+    linear_step: 0.5
+    angular_step: 0.5
     max_linear: 1.0
     max_angular: 1.5
-    zero_on_idle: true
+    zero_on_idle: false
   logger:
     frame_topic: camera/frame
     command_topic: driving/command
@@ -31,4 +31,4 @@ ros:
     command_topic: driving/command
     max_pwm: 2000
     steering_scale: 1.0
-    throttle_scale: 1.0
+    throttle_scale: 0.6
