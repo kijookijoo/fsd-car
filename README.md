@@ -53,6 +53,17 @@ camera_node -> logger_node -> images
 teleop_node  -> logger_node -> labels.csv
 ```
 
+```mermaid
+flowchart LR
+    Human[Human driver] --> Teleop[teleop_node]
+    Cam[camera_node] -->|sensor_msgs/Image| Logger[logger_node]
+    Teleop -->|std_msgs/String\nframe_stamp_ns, steering, throttle| CmdTopic[(command topic)]
+    CmdTopic --> Logger
+    CmdTopic --> Motor[motor_node]
+    Logger -->|writes| Dataset[(data/images + labels.csv)]
+    Motor --> Car[RC car]
+```
+
 Why this design:
 
 - The camera node stays focused on image capture.
@@ -66,6 +77,17 @@ The model predicts commands from live camera frames and the motor node applies t
 
 ```text
 camera_node -> inference_node -> motor_node -> car
+```
+
+```mermaid
+flowchart LR
+    Cam[camera_node] -->|sensor_msgs/Image| Infer[inference_node]
+    Infer -->|std_msgs/String\nframe_stamp_ns, steering, throttle| CmdTopic[(command topic)]
+    CmdTopic --> Logger[logger_node]
+    CmdTopic --> Motor[motor_node]
+    Logger -->|writes| Dataset[(log_path + images)]
+    Motor --> Car[RC car]
+    Model[(CNN checkpoint)] --> Infer
 ```
 
 Why this design:
